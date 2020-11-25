@@ -1,10 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
-# File Name: eigen.py
-# Author: Jiezhong Qiu
-# Create Time: 2017/07/13 16:05
-# TODO:
-
 import scipy.io
 import scipy.sparse as sparse
 from scipy.sparse import csgraph
