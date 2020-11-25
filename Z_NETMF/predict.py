@@ -1,10 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Time    : 2020/3/20 10:44
-# @Author  : Yuchen Sun
-# @FileName: test.py
-# @Project: PyCharm
-
 import os
 import pickle as pkl
 import numpy as np
