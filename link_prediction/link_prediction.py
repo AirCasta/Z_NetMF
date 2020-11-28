@@ -12,13 +12,14 @@ from sklearn.metrics import roc_auc_score, average_precision_score, roc_curve
 from sklearn.manifold import spectral_embedding
 import scipy.sparse as sparse
 import pickle
-import train_split as ts
 import time
 from sklearn.linear_model import LogisticRegression
 import matplotlib.pyplot as plt
-import node2vec as n2v
-import netmf as nm
 from gensim.models import Word2Vec
+
+from link_prediction.netmf import *
+from link_prediction.node2vec import Graph
+from link_prediction.train_split import mask_test_edges
 
 edge_functions = {
     "hadamard": lambda a, b: a * b,
@@ -331,7 +332,7 @@ def node2vec_scores(g_train, train_test_split, P = 1,
     start_time = time.time()
     if verbose >= 1:
         print('Preprocessing graph for node2vec')
-    g_n2v = n2v.Graph(g_train, DIRECTED, P, Q)
+    g_n2v = Graph(g_train, DIRECTED, P, Q)
     g_n2v.preprocess_transition_probs()
 
     walks = g_n2v.simulate_walks(NUM_WALKS, WALK_LENGTH)
@@ -404,16 +405,16 @@ def znetmf_scores(
     # load adjacency matrix
     vol = float(adj_train.sum())
     # perform eigen-decomposition of D^{-1/2} A D^{-1/2}, keep top-k eigenpairs, k is RANK
-    evals, D_rt_invU = nm.approximate_normalized_graph_laplacian(adj_train, rank=RANK, which="LA")
+    evals, D_rt_invU = approximate_normalized_graph_laplacian(adj_train, rank=RANK, which="LA")
     # approximate deepwalk matrix
-    deepwalk_matrix = nm.approximate_deepwalk_matrix(evals, Z, D_rt_invU,
+    deepwalk_matrix = approximate_deepwalk_matrix(evals, Z, D_rt_invU,
                                                       window=WINDOW_SIZE,
                                                       vol=vol, b=NEGATIVE)
     # factorize deepwalk matrix with SVD
     if emb_side == 'right':
-    	emb_matrix = nm.svd_deepwalk_matrix_lp(deepwalk_matrix, dim=DIMENSIONS)
+    	emb_matrix = svd_deepwalk_matrix_lp(deepwalk_matrix, dim=DIMENSIONS)
     else:
-        emb_matrix = nm.svd_deepwalk_matrix(deepwalk_matrix, dim=DIMENSIONS)
+        emb_matrix = svd_deepwalk_matrix(deepwalk_matrix, dim=DIMENSIONS)
     res = []
     for edge_score_func in edge_score_funcs:
         train_edge_embs, train_edge_labels = get_X_y(train_edges, train_edges_false, emb_matrix, edge_score_func)
@@ -477,19 +478,19 @@ def nodemf_scores(
     start_time = time.time()
     # load adjacency matrix
     if P != 1 or Q != 1:
-        adj_train = nm.get_biased_matrix(adj_train, P, Q)
+        adj_train = get_biased_matrix(adj_train, P, Q)
     vol = float(adj_train.sum())
     # perform eigen-decomposition of D^{-1/2} A D^{-1/2}, keep top-k eigenpairs, k is RANK
-    evals, D_rt_invU = nm.approximate_normalized_graph_laplacian(adj_train, rank=RANK, which="LA")
+    evals, D_rt_invU = approximate_normalized_graph_laplacian(adj_train, rank=RANK, which="LA")
     # approximate deepwalk matrix
-    deepwalk_matrix = nm.approximate_deepwalk_matrix(evals, Z, D_rt_invU,
+    deepwalk_matrix = approximate_deepwalk_matrix(evals, Z, D_rt_invU,
                                                       window=WINDOW_SIZE,
                                                       vol=vol, b=NEGATIVE)
     # factorize deepwalk matrix with SVD
     if emb_side == 'right':
-    	emb_matrix = nm.svd_deepwalk_matrix_lp(deepwalk_matrix, dim=DIMENSIONS)
+    	emb_matrix = svd_deepwalk_matrix_lp(deepwalk_matrix, dim=DIMENSIONS)
     else:
-        emb_matrix = nm.svd_deepwalk_matrix(deepwalk_matrix, dim=DIMENSIONS)
+        emb_matrix = svd_deepwalk_matrix(deepwalk_matrix, dim=DIMENSIONS)
     
     res = []
     for edge_score_func in edge_score_funcs:
@@ -544,7 +545,7 @@ def calculate_scores(adj_mat, feat=None, test_frac=.1, val_frac=.05, random_seed
             print('Train-test split file is existed!')
     except:  # Else, generate train-test split on the fly
         print('Generating train-test split...')
-        train_test_split = ts.mask_test_edges(adj_mat, test_frac=test_frac, val_frac=val_frac)
+        train_test_split = mask_test_edges(adj_mat, test_frac=test_frac, val_frac=val_frac)
         with open(train_test_file, 'wb') as f:
             pickle.dump(train_test_split,f)
 
