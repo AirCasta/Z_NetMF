@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # @Time    : 2020/5/28 12:18
 # @Author  : Yuchen Sun
-# @FileName: link_prediction.py
+# @FileName: prediction.py
 # @Project: PyCharm
 
 import networkx as nx
@@ -16,8 +16,10 @@ import time
 from sklearn.linear_model import LogisticRegression
 import matplotlib.pyplot as plt
 from gensim.models import Word2Vec
+import pandas as pd
 
-from link_prediction.netmf import *
+from link_prediction.netmf import approximate_normalized_graph_laplacian, approximate_deepwalk_matrix, \
+    svd_deepwalk_matrix_lp, svd_deepwalk_matrix, get_biased_matrix
 from link_prediction.node2vec import Graph
 from link_prediction.train_split import mask_test_edges
 
@@ -311,7 +313,7 @@ def get_X_y(edges, edges_false, emb_mat, edge_function):
 
 # Input: original adj_sparse, train_test_split (from mask_test_edges), n2v hyperparameters
 # Output: dictionary with ROC AUC, ROC Curve, AP, Runtime
-def node2vec_scores(g_train, train_test_split, P = 1, 
+def node2vec_scores(g_train, train_test_split, P = 1,
     Q = 1,
     WINDOW_SIZE = 10, 
     NUM_WALKS = 10, 
@@ -382,6 +384,7 @@ def node2vec_scores(g_train, train_test_split, P = 1,
 
 # Input: original adj_sparse, train_test_split (from mask_test_edges), znm hyperparameters
 # Output: dictionary with ROC AUC, ROC Curve, AP, Runtime
+# This is z_netmf_t
 def znetmf_scores(
         g_train, 
         train_test_split,
@@ -435,27 +438,28 @@ def znetmf_scores(
         # Calculate scores
         if len(val_edges) > 0 and len(val_edges_false) > 0:
             znm_val_roc = roc_auc_score(val_edge_labels, val_preds)
-            znm_val_avg = average_precision_score(val_edge_labels, val_preds)
+            # znm_val_avg = average_precision_score(val_edge_labels, val_preds)
         else:
             znm_val_roc = None
             znm_val_avg = None
 
-        znm_test_roc = roc_auc_score(test_edge_labels, test_preds)
-        znm_test_avg = average_precision_score(test_edge_labels, test_preds)
+        # znm_test_roc = roc_auc_score(test_edge_labels, test_preds)
+        # znm_test_avg = average_precision_score(test_edge_labels, test_preds)
 
         # Record scores
         znm_scores = {}
 
-        znm_scores['test_roc'] = znm_test_roc
-        znm_scores['test_ap'] = znm_test_avg
+        # znm_scores['test_roc'] = znm_test_roc
+        # znm_scores['test_ap'] = znm_test_avg
         znm_scores['val_roc'] = znm_val_roc
-        znm_scores['val_ap'] = znm_val_avg
+        # znm_scores['val_ap'] = znm_val_avg
         znm_scores['runtime'] = runtime
         res.append(znm_scores)
     return edge_score_funcs, res
 
 # Input: original adj_sparse, train_test_split (from mask_test_edges), znm hyperparameters
 # Output: dictionary with ROC AUC, ROC Curve, AP, Runtime
+#  This is z_netmf_g
 def nodemf_scores(
         g_train, 
         train_test_split,
@@ -468,10 +472,10 @@ def nodemf_scores(
         edge_score_funcs=["hadamard",],
         verbose=1,
         emb_side='left',
+        Z = 1.0,
 ):
     if g_train.is_directed():
         DIRECTED = True
-    Z = 1.0
     adj_train, train_edges, train_edges_false, val_edges, val_edges_false, \
     test_edges, test_edges_false = train_test_split  # Unpack train-test split
 
@@ -507,27 +511,27 @@ def nodemf_scores(
             val_preds = classifier.predict(val_edge_embs)
         test_preds = classifier.predict(test_edge_embs)
 
-        runtime = time.time() - start_time
+        # runtime = time.time() - start_time
 
         # Calculate scores
         if len(val_edges) > 0 and len(val_edges_false) > 0:
             nnm_val_roc = roc_auc_score(val_edge_labels, val_preds)
-            nnm_val_avg = average_precision_score(val_edge_labels, val_preds)
+            # nnm_val_avg = average_precision_score(val_edge_labels, val_preds)
         else:
             nnm_val_roc = None
-            nnm_val_avg = None
+            # nnm_val_avg = None
 
-        nnm_test_roc = roc_auc_score(test_edge_labels, test_preds)
-        nnm_test_avg = average_precision_score(test_edge_labels, test_preds)
+        # nnm_test_roc = roc_auc_score(test_edge_labels, test_preds)
+        # nnm_test_avg = average_precision_score(test_edge_labels, test_preds)
 
         # Record scores
         nnm_scores = {}
 
-        nnm_scores['test_roc'] = nnm_test_roc
-        nnm_scores['test_ap'] = nnm_test_avg
+        # nnm_scores['test_roc'] = nnm_test_roc
+        # nnm_scores['test_ap'] = nnm_test_avg
         nnm_scores['val_roc'] = nnm_val_roc
-        nnm_scores['val_ap'] = nnm_val_avg
-        nnm_scores['runtime'] = runtime
+        # nnm_scores['val_ap'] = nnm_val_avg
+        # nnm_scores['runtime'] = runtime
         res.append(nnm_scores)
     return edge_score_funcs, res
 
@@ -605,7 +609,7 @@ def calculate_scores(adj_mat, feat=None, test_frac=.1, val_frac=.05, random_seed
     #     print('Spectral Clustering Test ROC score: ', str(sc_scores['test_roc']))
     #     print('Spectral Clustering Test AP score: ', str(sc_scores['test_ap']))
 
-    modes = ["hadamard","average","L1","L2"]
+    modes = ["hadamard","L1","L2"]
     paras_str = ''
     ### ---------- NODE2VEC ---------- ###
     # # When p = q = 1, Node2Vec degrades into DeepWalk
@@ -641,29 +645,42 @@ def calculate_scores(adj_mat, feat=None, test_frac=.1, val_frac=.05, random_seed
     #                 print('node2vec (' + mode1 + ') Test AP score: ', str(n2v_edge_emb_scores[i]['test_ap']))
     #                 print('')
 
-    # ### ---------- Z-NetMF ---------- ###
-    RANK = 256
-    DIMENSIONS = 128
-    WINDOW_SIZE = 10
-    NEGATIVE = 1.0
-    Z = 1.0
-    paras = [1.6, 1.7, 1.9]
-    paras_str += 'z_netmf_paras' + ','.join([str(i) for i in paras])+'\t'
-    for Z in paras:
-        modes, znm_edge_emb_scores = znetmf_scores(g_train, train_test_split, RANK, DIMENSIONS,
-                                            WINDOW_SIZE, NEGATIVE, Z, modes, verbose, 'right')
-        for i in range(len(modes)):
-            mode = modes[i]
-            mode1 = mode + '_' + str(Z)
-            lp_scores['znm_' + mode1] = znm_edge_emb_scores[i]
+    # ### ---------- Z-NetMF-t ---------- ###
+    # RANK = 256
+    # DIMENSIONS = 128
+    # WINDOW_SIZE = 10
+    # NEGATIVE = 1.0
+    # Z = 1.0
+    # paras = [0.4, 0.8, 1.2, 1.6, 1.7, 1.9, 2.2, 2.5, 2.8, 3.0, 3.5]
+    # paras_str += 'z_netmf_paras' + ','.join([str(i) for i in paras])+'\t'
+    # df = pd.DataFrame([], columns=['mode', 'paras', 'val_roc'])
+    # val_roc_min = 1
+    # val_roc_max = 0
+    # for Z in paras:
+    #     modes, znm_edge_emb_scores = znetmf_scores(g_train, train_test_split, RANK, DIMENSIONS,
+    #                                         WINDOW_SIZE, NEGATIVE, Z, modes, verbose, 'right')
+    #
+    #     for i in range(len(modes)):
+    #         mode = modes[i]
+    #         mode1 = mode + '_' + str(Z)
+    #         lp_scores['znm_' + mode1] = znm_edge_emb_scores[i]
+    #         if znm_edge_emb_scores[i]['val_roc'] < val_roc_min:
+    #             val_roc_min = znm_edge_emb_scores[i]['val_roc']
+    #         if znm_edge_emb_scores[i]['val_roc'] > val_roc_max:
+    #             val_roc_max = znm_edge_emb_scores[i]['val_roc']
+    #         dff = pd.DataFrame([[mode, Z, znm_edge_emb_scores[i]['val_roc']]], columns=['mode', 'paras', 'val_roc'])
+    #         df = pd.concat([df, dff])
+    #
+    #
+    #
+    #         if verbose >= 1:
+    #             print('')
+    #             print('znetmf (' + mode1 + ') Validation ROC score: ', str(znm_edge_emb_scores[i]['val_roc']))
+    #             # print('znetmf (' + mode1 + ') Validation AP score: ', str(znm_edge_emb_scores[i]['val_ap']))
+    #             # print('znetmf (' + mode1 + ') Test ROC score: ', str(znm_edge_emb_scores[i]['test_roc']))
+    #             # print('znetmf (' + mode1 + ') Test AP score: ', str(znm_edge_emb_scores[i]['test_ap']))
 
-            if verbose >= 1:
-                print('')
-                print('znetmf (' + mode1 + ') Validation ROC score: ', str(znm_edge_emb_scores[i]['val_roc']))
-                print('znetmf (' + mode1 + ') Validation AP score: ', str(znm_edge_emb_scores[i]['val_ap']))
-                print('znetmf (' + mode1 + ') Test ROC score: ', str(znm_edge_emb_scores[i]['test_roc']))
-                print('znetmf (' + mode1 + ') Test AP score: ', str(znm_edge_emb_scores[i]['test_ap']))
-    ### ---------- NodeMF ---------- ###
+    ### ---------- Z-NetMF-g ---------- ###
     # RANK = 256
     # DIMENSIONS = 128
     # WINDOW_SIZE = 10
@@ -672,6 +689,9 @@ def calculate_scores(adj_mat, feat=None, test_frac=.1, val_frac=.05, random_seed
     # Q = 1.0
     # paras = [0.5, 1, 2]
     # paras_str += 'z_netmf_paras' + ','.join([str(i) for i in paras])
+    # df = pd.DataFrame([], columns=['mode', 'paras', 'val_roc'])
+    # val_roc_min = 1
+    # val_roc_max = 0
     # for P in paras:
     #     for Q in paras:
     #         modes, nnm_edge_emb_scores = nodemf_scores(g_train, train_test_split, RANK, DIMENSIONS,
@@ -680,11 +700,58 @@ def calculate_scores(adj_mat, feat=None, test_frac=.1, val_frac=.05, random_seed
     #             mode = modes[i]
     #             mode1 = mode + '_' + str(P) + '_' + str(Q)
     #             lp_scores['nnm_' + mode1] = nnm_edge_emb_scores[i]
+    #
+    #             if nnm_edge_emb_scores[i]['val_roc'] < val_roc_min:
+    #                 val_roc_min = nnm_edge_emb_scores[i]['val_roc']
+    #             if nnm_edge_emb_scores[i]['val_roc'] > val_roc_max:
+    #                 val_roc_max = nnm_edge_emb_scores[i]['val_roc']
+    #             dff = pd.DataFrame([[mode, str(P) + ',' + str(Q), nnm_edge_emb_scores[i]['val_roc']]], columns=['mode', 'paras', 'val_roc'])
+    #             df = pd.concat([df, dff])
+    #
     #             if verbose >= 1:
     #                 print('')
     #                 print('nodemf (' + mode1 + ') Validation ROC score: ', str(nnm_edge_emb_scores[i]['val_roc']))
-    #                 print('nodemf (' + mode1 + ') Validation AP score: ', str(nnm_edge_emb_scores[i]['val_ap']))
-    #                 print('nodemf (' + mode1 + ') Test ROC score: ', str(nnm_edge_emb_scores[i]['test_roc']))
-    #                 print('nodemf (' + mode1 + ') Test AP score: ', str(nnm_edge_emb_scores[i]['test_ap']))
+    #                 # print('nodemf (' + mode1 + ') Validation AP score: ', str(nnm_edge_emb_scores[i]['val_ap']))
+    #                 # print('nodemf (' + mode1 + ') Test ROC score: ', str(nnm_edge_emb_scores[i]['test_roc']))
+    #                 # print('nodemf (' + mode1 + ') Test AP score: ', str(nnm_edge_emb_scores[i]['test_ap']))
+    #
+    # return lp_scores, paras_str, df, val_roc_min, val_roc_max
+    ### ---------- Z-NetMF-gt ---------- ###
+    # try to find the best combination of P,Q,Z
+    RANK = 256
+    DIMENSIONS = 128
+    WINDOW_SIZE = 10
+    NEGATIVE = 1.0
+    paras = [0.5, 1, 2]
+    # z_paras = [0.4, 0.8, 1.2, 1.6, 1.7, 1.9, 2.2, 2.5, 2.8, 3.0, 3.5]
+    z_paras = [0.4, 3.0, 3.5]
+    paras_str += 'z_netmf_paras' + ','.join([str(i) for i in paras])
+    df = pd.DataFrame([], columns=['mode', 'paras', 'val_roc'])
+    val_roc_min = 1
+    val_roc_max = 0
+    for P in paras:
+        for Q in paras:
+            for Z in z_paras:
+                modes, nnm_edge_emb_scores = nodemf_scores(g_train, train_test_split, RANK, DIMENSIONS,
+                                                           WINDOW_SIZE, NEGATIVE, P, Q, modes, verbose, 'right', Z)
+                for i in range(len(modes)):
+                    mode = modes[i]
+                    mode1 = mode + '_' + str(P) + '_' + str(Q) + '_' + str(Z)
+                    lp_scores['nnm_' + mode1] = nnm_edge_emb_scores[i]
 
-    return lp_scores, paras_str
+                    if nnm_edge_emb_scores[i]['val_roc'] < val_roc_min:
+                        val_roc_min = nnm_edge_emb_scores[i]['val_roc']
+                    if nnm_edge_emb_scores[i]['val_roc'] > val_roc_max:
+                        val_roc_max = nnm_edge_emb_scores[i]['val_roc']
+                    dff = pd.DataFrame([[mode, str(P) + ',' + str(Q) + ',' + str(Z), nnm_edge_emb_scores[i]['val_roc']]],
+                                       columns=['mode', 'paras', 'val_roc'])
+                    df = pd.concat([df, dff])
+
+                    if verbose >= 1:
+                        print('')
+                        print('nodemf (' + mode1 + ') Validation ROC score: ', str(nnm_edge_emb_scores[i]['val_roc']))
+                        # print('nodemf (' + mode1 + ') Validation AP score: ', str(nnm_edge_emb_scores[i]['val_ap']))
+                        # print('nodemf (' + mode1 + ') Test ROC score: ', str(nnm_edge_emb_scores[i]['test_roc']))
+                        # print('nodemf (' + mode1 + ') Test AP score: ', str(nnm_edge_emb_scores[i]['test_ap']))
+
+    return lp_scores, paras_str, df, val_roc_min, val_roc_max

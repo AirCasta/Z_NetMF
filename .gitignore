@@ -128,3 +128,13 @@ dmypy.json
 # Pyre type checker
 .pyre/
 .idea/
+
+# link prediction
+link_prediction/train_and_test
+link_prediction/figure.zip
+link_prediction/figure/
+link_prediction/results/
+link_prediction/processed/
+link_prediction/__pycache__/*.*
+
+.DS_Store
